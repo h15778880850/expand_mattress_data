@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(D:/single_env/dual_input_model/Scripts/python.exe *)"
+    ]
+  }
+}

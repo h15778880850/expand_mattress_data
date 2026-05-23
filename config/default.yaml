@@ -1,0 +1,38 @@
+data:
+  train_dir: "data/train_data"
+  test_dir: "data/test_data"
+  window_size: 1000
+  stride: 500
+  sampling_rate: 1000
+  normalization: "zscore"
+  val_ratio: 0.1
+  test_ratio: 0.1
+  random_seed: 42
+  num_workers: 4
+
+model:
+  name: "cnn1d"
+  in_channels: 7
+  num_classes: 5
+  cnn_channels: [64, 128, 256]
+  cnn_kernels: [7, 5, 3]
+  cnn_strides: [2, 2, 2]
+  dropout: 0.5
+
+training:
+  batch_size: 128
+  epochs: 100
+  lr: 0.001
+  weight_decay: 0.001
+  early_stop_patience: 10
+  device: "cuda"
+  log_interval: 10
+  save_dir: "experiments"
+
+evaluation:
+  confidence_level: 0.95
+  bootstrap_iterations: 1000
+
+ablation:
+  enabled: false
+  experiment: "A1"
