@@ -1,4 +1,5 @@
 import os
+import csv
 import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
@@ -27,6 +28,7 @@ class Trainer:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_dir = Path(log_dir) / f"run_{timestamp}"
         run_dir.mkdir(parents=True, exist_ok=True)
+        self.run_dir = run_dir
         self.checkpoint_dir = run_dir / "checkpoints"
         self.checkpoint_dir.mkdir(exist_ok=True)
         self.writer = SummaryWriter(log_dir=str(run_dir / "tensorboard"))
@@ -37,6 +39,8 @@ class Trainer:
         self.patience_counter = 0
         self.best_model_state = None
         self.current_epoch = 0
+        # per-epoch metrics for CSV export
+        self.history = []
 
     def train_epoch(self, train_loader):
         self.model.train()
@@ -105,6 +109,14 @@ class Trainer:
             )
             self.logger.write(log_msg)
             print(log_msg)
+            self.history.append({
+                "epoch": epoch,
+                "train_loss": round(train_loss, 6),
+                "train_acc": round(train_acc, 4),
+                "val_loss": round(val_loss, 6),
+                "val_acc": round(val_acc, 4),
+                "lr": round(self.optimizer.param_groups[0]["lr"], 8),
+            })
 
             # early stopping
             if val_loss < self.best_val_loss:
@@ -130,6 +142,7 @@ class Trainer:
         # load best model
         self.model.load_state_dict(self.best_model_state)
 
+        self.save_history_csv()
         self.logger.write(f"Training completed. Best val loss: {self.best_val_loss:.4f}")
         self.writer.close()
 
@@ -154,6 +167,17 @@ class Trainer:
             "labels": torch.cat(all_labels).numpy(),
             "logits": torch.cat(all_logits).numpy(),
         }
+
+    def save_history_csv(self):
+        csv_path = self.run_dir / "training_metrics.csv"
+        with open(csv_path, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=[
+                "epoch", "train_loss", "train_acc", "val_loss", "val_acc", "lr",
+            ])
+            w.writeheader()
+            w.writerows(self.history)
+        self.logger.write(f"Training metrics saved to {csv_path}")
+        return csv_path
 
     def load_checkpoint(self, path):
         ckpt = torch.load(path, map_location=self.device)

@@ -1,0 +1,16 @@
+[2026-05-23 15:43:36] Training started: 100 epochs, device=cuda
+[2026-05-23 15:43:44] Epoch   1/100 | Train Loss: 1.1186 Acc: 59.28% | Val Loss: 2.7152 Acc: 27.25%
+[2026-05-23 15:43:44]   → Checkpoint saved: experiments\fold_4\run_20260523_154336\checkpoints\best_model.pt
+[2026-05-23 15:43:51] Epoch   2/100 | Train Loss: 0.7641 Acc: 70.38% | Val Loss: 2.8337 Acc: 24.65%
+[2026-05-23 15:43:58] Epoch   3/100 | Train Loss: 0.6633 Acc: 73.92% | Val Loss: 2.7978 Acc: 24.65%
+[2026-05-23 15:44:05] Epoch   4/100 | Train Loss: 0.6313 Acc: 75.04% | Val Loss: 2.8562 Acc: 24.50%
+[2026-05-23 15:44:12] Epoch   5/100 | Train Loss: 0.6285 Acc: 75.32% | Val Loss: 3.0501 Acc: 22.75%
+[2026-05-23 15:44:19] Epoch   6/100 | Train Loss: 0.6034 Acc: 76.03% | Val Loss: 3.4093 Acc: 24.17%
+[2026-05-23 15:44:26] Epoch   7/100 | Train Loss: 0.5374 Acc: 78.85% | Val Loss: 3.6072 Acc: 26.44%
+[2026-05-23 15:44:33] Epoch   8/100 | Train Loss: 0.5151 Acc: 79.73% | Val Loss: 3.6098 Acc: 24.36%
+[2026-05-23 15:44:40] Epoch   9/100 | Train Loss: 0.5441 Acc: 78.57% | Val Loss: 3.7882 Acc: 22.14%
+[2026-05-23 15:44:47] Epoch  10/100 | Train Loss: 0.5316 Acc: 78.60% | Val Loss: 3.5404 Acc: 27.63%
+[2026-05-23 15:44:54] Epoch  11/100 | Train Loss: 0.4980 Acc: 80.24% | Val Loss: 3.4778 Acc: 26.25%
+[2026-05-23 15:44:54] Early stopping triggered at epoch 11
+[2026-05-23 15:44:54] Training metrics saved to experiments\fold_4\run_20260523_154336\training_metrics.csv
+[2026-05-23 15:44:54] Training completed. Best val loss: 2.7152

@@ -119,10 +119,18 @@ def load_test_data(
     test_dir = Path(test_dir)
     all_windows = []
     all_labels = []
-    for class_name, class_idx in CLASS_TO_IDX.items():
-        csv_file = test_dir / f"{class_name}.csv"
-        if not csv_file.exists():
+    for csv_file in sorted(test_dir.glob("*.csv")):
+        # infer class label from filename (e.g. 01_supine.csv -> supine)
+        fname = csv_file.stem
+        matched_class = None
+        for class_name in CLASS_TO_IDX:
+            if class_name in fname:
+                matched_class = class_name
+                break
+        if matched_class is None:
+            print(f"Warning: cannot infer class from {fname}, skipping")
             continue
+        class_idx = CLASS_TO_IDX[matched_class]
         windows, _ = preprocess_csv(
             str(csv_file), window_size, stride,
             norm_params=norm_params, norm_method=norm_method,

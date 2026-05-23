@@ -1,109 +1,144 @@
 import sys
+import csv
 import argparse
+from pathlib import Path
 sys.path.insert(0, ".")
 
+import numpy as np
 import torch
-from src.utils.helpers import Config, set_seed, get_device, Logger, CLASS_NAMES
-from src.data.dataset import create_dataloaders
+from src.utils.helpers import Config, set_seed, get_device, CLASS_NAMES
+from src.data.dataset import create_kfold_dataloaders
+from src.data.transforms import build_transform
 from src.models.cnn1d import CNN1D
 from src.trainer.trainer import Trainer
 from src.evaluation.metrics import ClassificationMetrics
 from src.evaluation.visualizer import Visualizer
-from src.ablation.ablation import AblationStudy
 
 
-def train(args, config):
+def train_kfold(config):
     device = get_device()
     print(f"Using device: {device}")
 
-    # data
-    print("Loading data...")
-    train_loader, val_loader, test_loader, test_extra_loader = create_dataloaders(config)
-    print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}, "
-          f"Test batches: {len(test_loader)}, Extra test batches: {len(test_extra_loader)}")
+    n_splits = config.get("kfold", "n_splits", default=5)
+    transform = build_transform(config)
+    if transform is not None:
+        print(f"Using data augmentation: {transform.transforms}")
+    else:
+        print("No data augmentation")
 
-    # model
-    model = CNN1D(
-        in_channels=config.get("model", "in_channels"),
-        num_classes=config.get("model", "num_classes"),
-        channels=config.get("model", "cnn_channels"),
-        kernels=config.get("model", "cnn_kernels"),
-        strides=config.get("model", "cnn_strides"),
-        dropout=config.get("model", "dropout"),
-    )
-    print(f"Model: {sum(p.numel() for p in model.parameters()):,} parameters")
+    # store per-fold results
+    fold_results = []
 
-    # train
-    trainer = Trainer(model, config, device)
-    trainer.fit(train_loader, val_loader, config.get("training", "epochs"))
+    for fold in range(n_splits):
+        print(f"\n{'=' * 60}")
+        print(f"Fold {fold + 1}/{n_splits}")
+        print(f"{'=' * 60}")
 
-    # evaluate on held-out test set
-    print("\nEvaluating on held-out test set...")
-    test_results = trainer.evaluate(test_loader)
-    metrics = ClassificationMetrics(
-        test_results["labels"], test_results["predictions"],
-        y_score=test_results["logits"],
-    )
+        train_loader, val_loader, splits, _ = create_kfold_dataloaders(
+            config, fold, transform=transform,
+        )
+        n_train = len(splits[0])
+        n_val = len(splits[1])
+        print(f"Train samples: {n_train}, Val samples: {n_val}")
 
-    # evaluate on independent test_data
-    print("Evaluating on independent test_data...")
-    extra_results = trainer.evaluate(test_extra_loader)
-    metrics_extra = ClassificationMetrics(
-        extra_results["labels"], extra_results["predictions"],
-        y_score=extra_results["logits"],
-    )
+        model = CNN1D(
+            in_channels=config.get("model", "in_channels"),
+            num_classes=config.get("model", "num_classes"),
+            channels=config.get("model", "cnn_channels"),
+            kernels=config.get("model", "cnn_kernels"),
+            strides=config.get("model", "cnn_strides"),
+            dropout=config.get("model", "dropout"),
+        )
+        print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-    # print results
-    print("\n" + "=" * 60)
-    print("Results on held-out test set (from train_data)")
-    print("=" * 60)
-    print(metrics.summary())
+        trainer = Trainer(
+            model, config, device,
+            log_dir=f"experiments/fold_{fold + 1}",
+        )
+        trainer.fit(
+            train_loader, val_loader,
+            config.get("training", "epochs"),
+        )
 
-    print("\n" + "=" * 60)
-    print("Results on independent test_data")
-    print("=" * 60)
-    print(metrics_extra.summary())
+        # evaluate
+        results = trainer.evaluate(val_loader)
+        metrics = ClassificationMetrics(
+            results["labels"], results["predictions"],
+            y_score=results["logits"],
+        )
 
-    # visualize
-    viz = Visualizer()
-    viz.plot_confusion_matrix(metrics.confusion_matrix(), "confusion_matrix_test.png")
-    viz.plot_confusion_matrix(metrics_extra.confusion_matrix(), "confusion_matrix_extra.png")
+        fold_metrics = {
+            "fold": fold + 1,
+            "val_loss": trainer.best_val_loss,
+            "accuracy": metrics.overall_accuracy(),
+            "macro_f1": metrics.macro_f1(),
+            "weighted_f1": metrics.weighted_f1(),
+            "stopped_epoch": trainer.current_epoch,
+        }
+        fold_results.append(fold_metrics)
 
-    roc_curves = metrics.roc_curves()
-    if roc_curves:
-        viz.plot_roc_curves(roc_curves, "roc_curves_test.png")
-    roc_curves_extra = metrics_extra.roc_curves()
-    if roc_curves_extra:
-        viz.plot_roc_curves(roc_curves_extra, "roc_curves_extra.png")
+        print(f"  Fold {fold + 1} - Acc: {fold_metrics['accuracy']:.4f}, "
+              f"Macro F1: {fold_metrics['macro_f1']:.4f}, "
+              f"Best Val Loss: {fold_metrics['val_loss']:.4f}")
 
-    viz.plot_per_class_bar(metrics.per_class_metrics(), "per_class_metrics_test.png")
+        # per-fold confusion matrix
+        viz = Visualizer()
+        viz.plot_confusion_matrix(
+            metrics.confusion_matrix(),
+            f"fold{fold + 1}_confusion_matrix.png",
+        )
 
-    # t-SNE
-    features = test_results["logits"]
-    viz.plot_tsne(features, test_results["labels"], "tsne_logits.png")
+    # aggregate results
+    print(f"\n{'=' * 60}")
+    print("K-Fold Cross Validation Results")
+    print(f"{'=' * 60}")
 
-    # bootstrap confidence intervals
-    print("\nBootstrapping confidence intervals (98% might take a moment)...")
-    acc_lower, acc_upper = metrics.bootstrap_ci("overall_accuracy")
-    f1_lower, f1_upper = metrics.bootstrap_ci("macro_f1")
-    print(f"Test Accuracy 95% CI: [{acc_lower:.4f}, {acc_upper:.4f}]")
-    print(f"Macro F1 95% CI:      [{f1_lower:.4f}, {f1_upper:.4f}]")
+    accs = [r["accuracy"] for r in fold_results]
+    f1s = [r["macro_f1"] for r in fold_results]
+    wf1s = [r["weighted_f1"] for r in fold_results]
 
-    print(f"\nFigures saved to {viz.save_dir}")
+    header = f"{'Fold':>6} {'Accuracy':>10} {'Macro F1':>10} {'Weighted F1':>12} {'Best Loss':>10}"
+    print(header)
+    print("-" * 50)
+    for r in fold_results:
+        print(f"{r['fold']:>6} {r['accuracy']:>10.4f} {r['macro_f1']:>10.4f} "
+              f"{r['weighted_f1']:>12.4f} {r['val_loss']:>10.4f}")
+    print("-" * 50)
+    print(f"{'Mean':>6} {np.mean(accs):>10.4f} {np.mean(f1s):>10.4f} "
+          f"{np.mean(wf1s):>12.4f}")
+    print(f"{'Std':>6} {np.std(accs):>10.4f} {np.std(f1s):>10.4f} "
+          f"{np.std(wf1s):>12.4f}")
 
-
-def run_ablation(args, config):
-    print("Running ablation study A1...")
-    study = AblationStudy(config)
-    study.run_A1(epochs=config.get("training", "epochs"))
-    print("Ablation complete.")
+    # save aggregated results
+    result_dir = Path("experiments")
+    result_dir.mkdir(exist_ok=True)
+    csv_path = result_dir / "kfold_results.csv"
+    with open(csv_path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=[
+            "fold", "accuracy", "macro_f1", "weighted_f1", "val_loss", "stopped_epoch",
+        ])
+        w.writeheader()
+        for r in fold_results:
+            w.writerow(r)
+        # summary row
+        w.writerow({
+            "fold": "mean",
+            "accuracy": np.mean(accs),
+            "macro_f1": np.mean(f1s),
+            "weighted_f1": np.mean(wf1s),
+        })
+        w.writerow({
+            "fold": "std",
+            "accuracy": np.std(accs),
+            "macro_f1": np.std(f1s),
+            "weighted_f1": np.std(wf1s),
+        })
+    print(f"\nResults saved to {csv_path}")
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default="config/default.yaml")
-    parser.add_argument("--mode", type=str, choices=["train", "ablation"],
-                        default="train")
     parser.add_argument("--seed", type=int, default=None)
     args = parser.parse_args()
 
@@ -112,11 +147,7 @@ def main():
         config.get("data", "random_seed", default=args.seed)
 
     set_seed(config.get("data", "random_seed", default=42))
-
-    if args.mode == "train":
-        train(args, config)
-    elif args.mode == "ablation":
-        run_ablation(args, config)
+    train_kfold(config)
 
 
 if __name__ == "__main__":

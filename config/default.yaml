@@ -4,11 +4,13 @@ data:
   window_size: 1000
   stride: 500
   sampling_rate: 1000
-  normalization: "zscore"
-  val_ratio: 0.1
-  test_ratio: 0.1
+  normalization: "per_file"
   random_seed: 42
   num_workers: 4
+
+kfold:
+  n_splits: 5
+  shuffle: true
 
 model:
   name: "cnn1d"
@@ -28,6 +30,18 @@ training:
   device: "cuda"
   log_interval: 10
   save_dir: "experiments"
+
+augmentation:
+  gaussian_noise:
+    prob: 0.5
+    std: 0.01
+  amplitude_scale:
+    prob: 0.3
+    scale_min: 0.95
+    scale_max: 1.05
+  time_warp:
+    prob: 0.0
+    max_warp: 0.1
 
 evaluation:
   confidence_level: 0.95
